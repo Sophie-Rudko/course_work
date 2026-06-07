@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Sentiment vs Volatility Correlation</h1>
+  <p class="hint">Pearson correlation between daily sentiment (from news) and rolling volatility (from prices). Inspired by Halouskova and Lyocsa (2025): sentiment helps explain volatility; Kubica et al. (2025): finance-specific NLP is required.</p>
+  <p class="hint">Note: live news are recent headlines; volatility is computed from historical candles, so the overlap may be limited on short samples.</p>
+
+  <div class="card" style="background:#f3f6ff; border-color:#c5cae9;">
+    <h3>What this page measures (no model, pure statistics)</h3>
+    <p class="hint">This tab does <b>not</b> use any ML model. For every trading day we take two numbers and check
+      how they relate:</p>
+    <ul class="hint">
+      <li><b>X = daily sentiment</b>: the average FinBERT polarity of that day's headlines (-1 very negative to +1 very positive).</li>
+      <li><b>Y = volatility</b>: the 20-day rolling volatility computed from prices that day.</li>
+    </ul>
+    <p class="hint">Each dot in the scatter below is <b>one trading day</b> (X, Y). The line charts show the same
+      two series over time. We then compute the Pearson correlation between X and Y.</p>
+    <p class="hint"><b>Pearson r</b> (from -1 to +1) shows the direction and strength of the <i>linear</i> link:
+      <b>+1</b> move perfectly together, <b>-1</b> move perfectly opposite, <b>0</b> no linear link.
+      Rough scale: |r| below 0.1 negligible, 0.1 to 0.3 weak, 0.3 to 0.5 moderate, above 0.5 strong.</p>
+    <p class="hint"><b>p-value</b> tests whether the correlation is real or just a fluke. Imagine sentiment and
+      volatility were <i>truly unrelated</i>: the p-value is the probability that random data would still
+      produce a correlation at least as strong as the one we measured. So a smaller p-value is more trustworthy.
+      The usual cut-off is <b>0.05</b> (we accept at most a 5% risk of a false alarm):
+      <b>p below 0.05</b> means the link is significant and considered real;
+      <b>p of 0.05 or more</b> means it is not significant and may be a coincidence (common with few observations or a calm period).</p>
+  </div>
+
+  <div class="card">
+    <form class="filters" method="get">
+      <div>
+        <label>Ticker</label>
+        <input name="sec" value="{{ sec }}">
+      </div>
+      <div>
+        <label>From</label>
+        <input name="from" type="date" value="{{ date_from }}">
+      </div>
+      <div>
+        <label>Till</label>
+        <input name="till" type="date" value="{{ date_till }}">
+      </div>
+      <div>
+        <button type="submit">Load</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <p><b>Pearson r:</b> {{ correlation.pearson_r if correlation.pearson_r is not none else 'N/A' }}</p>
+    {% if correlation.p_value is not none %}
+    <p><b>p-value:</b> {{ correlation.p_value }} {% if correlation.p_value < 0.05 %}(statistically significant at 5%){% else %}(not significant at 5%){% endif %}</p>
+
+    {% set r = correlation.pearson_r %}
+    {% set ar = (r if r >= 0 else -r) %}
+    {% set strength = 'almost no' if ar < 0.1 else ('weak' if ar < 0.3 else ('moderate' if ar < 0.5 else 'strong')) %}
+    {% set direction = 'positive' if r > 0 else 'negative' %}
+    {% if correlation.p_value >= 0.05 %}
+    <p><b>In plain words:</b> on these {{ correlation.n_observations }} days there is
+      <b>no proven link</b> between news sentiment and volatility (p = {{ correlation.p_value }}, which is 0.05 or more,
+      so the small {{ strength }} {{ direction }} tilt we see could just be chance). Use a longer or more
+      turbulent period to test it properly.</p>
+    {% else %}
+    <p><b>In plain words:</b> there is a statistically real <b>{{ strength }} {{ direction }}</b> link
+      (p = {{ correlation.p_value }}, below 0.05).
+      {% if r < 0 %}Negative sentiment days tend to have higher volatility, positive days lower (the leverage effect).
+      {% else %}Days with higher sentiment readings tend to have higher volatility in this window.
+      {% endif %}
+    </p>
+    {% endif %}
+    {% elif correlation.get('note') == 'constant_sentiment_or_volatility' %}
+    <p class="hint">Correlation undefined: sentiment or volatility has no variance (often when news dates do not overlap the candle period).</p>
+    {% endif %}
+    <p class="hint">Observations: {{ correlation.n_observations }}, sentiment forward-filled to trading days when news is sparse</p>
+  </div>
+
+  <div class="card">{{ sent_chart_html|safe }}</div>
+  <div class="card">{{ vol_chart_html|safe }}</div>
+  <div class="card">{{ scatter_chart_html|safe }}</div>
+{% endblock %}

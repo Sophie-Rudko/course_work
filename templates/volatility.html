@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Volatility & Forecast</h1>
+  <p class="hint">20-day rolling volatility and next-day forecast. Metrics on a hold-out test set (last 20% of days).</p>
+  <div class="card" style="background:#fff8e1; border-color:#ffe082;">
+    <p><b>Important:</b> this page shows a <b>risk forecast</b> (how much the price may fluctuate tomorrow), not a buy/sell recommendation. Coursework MVP, not a trading system.</p>
+    <p class="hint">Higher predicted volatility means more uncertainty and bigger possible price swings. Lower means a calmer market.</p>
+    <p class="hint"><b>What is "20-day rolling volatility"?</b> Volatility is how much the daily price jumps around
+      (the standard deviation of daily log-returns). "20-day rolling" means we recompute it every day from the
+      <b>last 20 trading days</b> (about one month), so the line moves forward over time: high when recent days
+      swing a lot, low when the market is calm. We predict tomorrow's value of this number.</p>
+  </div>
+
+  <div class="card">
+    <form class="filters" method="get">
+      <div>
+        <label>Ticker</label>
+        <input name="sec" value="{{ sec }}" placeholder="SBER, ^GSPC, SPX">
+      </div>
+      <div>
+        <label>From</label>
+        <input name="from" type="date" value="{{ date_from }}">
+      </div>
+      <div>
+        <label>Till</label>
+        <input name="till" type="date" value="{{ date_till }}">
+      </div>
+      <div>
+        <button type="submit">Load</button>
+      </div>
+    </form>
+    <p class="hint">Try <code>^GSPC</code> or <code>SPX</code> for S&amp;P 500 (assignment benchmark index).</p>
+  </div>
+
+  <div class="card">
+    <p><b>Next-day predicted volatility:</b> {{ forecast.predicted_volatility }}
+      <span class="hint">(forecast from the best overall model)</span></p>
+
+    <p><b>Best model overall (used for the forecast):</b> {{ forecast.best_overall_label or forecast.model }}
+      {% if forecast.best_overall_rmse is not none %}, test RMSE = {{ forecast.best_overall_rmse }}{% endif %}</p>
+
+    {% if forecast.best_news_label %}
+    <p><b>Best model that uses news:</b> {{ forecast.best_news_label }}
+      {% if forecast.best_news_rmse is not none %}, test RMSE = {{ forecast.best_news_rmse }}{% endif %}</p>
+    {% else %}
+    <p><b>Best model that uses news:</b> <span class="hint">none, too few news days in this period to train news models</span></p>
+    {% endif %}
+
+    <p class="hint">
+      How models are chosen: every model is checked on a test set (the last 20% of days, not seen during
+      training), and the lowest <b>RMSE</b> wins. The best model overall is used for the forecast above.
+      The best news model is the best one that actually uses news features (its prediction line is shown
+      in the panel below).
+    </p>
+
+    {% if forecast.best_news_label %}
+      {% if forecast.news_helps %}
+      <p><b>Did news help?</b> <span style="color:#2e7d32;">Yes.</span> The best news model beats its
+        own price-only version, so investor sentiment adds information on top of price history here.</p>
+      {% else %}
+      <p><b>Did news help?</b> <span style="color:#c62828;">Not on average.</span> The best news model
+        does not beat the best price-only model overall. Next-day volatility is mostly driven by its own
+        recent values (volatility clustering, Corsi 2009, HAR-RV), so price lags already capture most of
+        the signal. News can still help in specific periods, see the turbulent-day row below.</p>
+      {% endif %}
+    {% endif %}
+
+    {% if forecast.sentiment_coverage is defined %}
+    <p class="hint">News coverage of training days: {{ (forecast.sentiment_coverage * 100)|round(1) }}%
+      {% if forecast.news_in_range_count is defined %}, {{ forecast.news_in_range_count }} news headlines in the selected period{% endif %}
+    </p>
+    {% endif %}
+
+    <p class="hint">Train: {{ forecast.train_samples }} days, test: {{ forecast.test_samples|default(0) }} days</p>
+    {% if forecast.feature_importances %}
+    <p class="hint">Feature importances: {{ forecast.feature_importances }}</p>
+    {% endif %}
+  </div>
+
+  {% if forecast.model_ranking %}
+  <div class="card">
+    <h3>All models ranked on the test set (lowest RMSE wins)</h3>
+    <p class="hint">Same comparison as the <a href="/evaluation?sec={{ sec }}&from={{ date_from }}&till={{ date_till }}">Evaluation</a> tab. The highlighted row is the model used for the forecast above.</p>
+    <table class="table">
+      <thead>
+        <tr><th>#</th><th>Model</th><th>RMSE</th><th>MAE</th><th>News used?</th></tr>
+      </thead>
+      <tbody>
+        {% for m in forecast.model_ranking %}
+        <tr {% if m.is_best %}style="background:#e8f5e9; font-weight:600;"{% endif %}>
+          <td>{{ loop.index }}{% if m.is_best %} (best){% endif %}</td>
+          <td>{{ m.model_label }}</td>
+          <td>{{ m.rmse }}</td>
+          <td>{{ m.mae }}</td>
+          <td>{% if m.uses_sentiment %}<span style="color:#2e7d32;">yes</span>{% else %}<span class="hint">no</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Does news sentiment add value here?</h3>
+    {% set sv = forecast.sentiment_value %}
+    {% if sv and sv.available %}
+    <p class="hint">
+      This panel compares the <b>best news model</b> ({{ sv.news_model_label }}) against its own
+      <b>price-only sibling</b> ({{ sv.price_model_label }}): the same algorithm with and without news
+      features (FinBERT negativity, opinion dispersion, news bursts). Next-day volatility is mostly
+      driven by volatility clustering (Corsi 2009, HAR-RV), so price lags dominate on calm days. The
+      value of news shows up mostly on <b>turbulent days</b> (leverage effect and attention spikes,
+      Ncume et al. 2022; StockEmotions disagreement), so we measure both cases separately.
+    </p>
+    <p class="hint">
+      How to read the table: we split the {{ sv.n_turbulent + sv.n_calm }} test days into
+      <b>turbulent</b> (the {{ sv.n_turbulent }} days with the highest actual volatility, the top 30%,
+      above {{ sv.turbulent_threshold }}) and <b>calm</b> (the other {{ sv.n_calm }} days).
+      Each number is the forecast error (RMSE, lower is better) of that model <i>on those specific days</i>;
+      the last column is how much adding news lowers the error.
+    </p>
+    <table class="table">
+      <thead>
+        <tr><th>Regime</th><th>Days</th><th>Price-only RMSE</th><th>+ News RMSE</th><th>News improvement</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>All test days</td>
+          <td>{{ sv.n_turbulent + sv.n_calm }}</td>
+          <td>{{ sv.overall.price_only_rmse }}</td>
+          <td>{{ sv.overall.with_sentiment_rmse }}</td>
+          <td>{% if sv.overall.improvement_pct is not none %}
+            <span style="color:{{ '#2e7d32' if sv.overall.improvement_pct > 0 else '#c62828' }};">{{ sv.overall.improvement_pct }}%</span>
+            {% else %}n/a{% endif %}</td>
+        </tr>
+        <tr style="background:#fff3e0;">
+          <td><b>Turbulent days</b> (top 30% vol)</td>
+          <td>{{ sv.n_turbulent }}</td>
+          <td>{{ sv.turbulent.price_only_rmse }}</td>
+          <td>{{ sv.turbulent.with_sentiment_rmse }}</td>
+          <td>{% if sv.turbulent.improvement_pct is not none %}
+            <span style="color:{{ '#2e7d32' if sv.turbulent.improvement_pct > 0 else '#c62828' }};">{{ sv.turbulent.improvement_pct }}%</span>
+            {% else %}n/a{% endif %}</td>
+        </tr>
+        <tr>
+          <td>Calm days</td>
+          <td>{{ sv.n_calm }}</td>
+          <td>{{ sv.calm.price_only_rmse }}</td>
+          <td>{{ sv.calm.with_sentiment_rmse }}</td>
+          <td>{% if sv.calm.improvement_pct is not none %}
+            <span style="color:{{ '#2e7d32' if sv.calm.improvement_pct > 0 else '#c62828' }};">{{ sv.calm.improvement_pct }}%</span>
+            {% else %}n/a{% endif %}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% set ov = sv.overall.improvement_pct %}
+    {% set tv = sv.turbulent.improvement_pct %}
+    {% if ov is not none and ov > 0 %}
+    <p style="color:#2e7d32;"><b>News help in this window: {{ ov }}% lower error overall.</b></p>
+    <p class="hint">
+      {% if tv is not none and tv > 0 %}
+        The gain is broad and is strongest on turbulent days ({{ tv }}% lower error), exactly the
+        regime-specific value reported in the literature (Ncume et al. 2022).
+      {% else %}
+        Most of the gain comes from normal and calm days. The few extreme turbulent days are <i>so</i> volatile
+        that no model gets the exact level, so news show a small minus there ({{ tv }}%). That is expected:
+        the overall and calm-day numbers are what matter, and there news clearly help.
+      {% endif %}
+    </p>
+    {% elif tv is not none and tv > 0 %}
+    <p style="color:#2e7d32;"><b>News pay off on turbulent days</b> ({{ tv }}% lower error),
+      even though they do not help on average. This is the regime-specific value reported in the literature.</p>
+    {% else %}
+    <p><b>News do not lower the error in this window, and that is expected here.</b></p>
+    <p class="hint">
+      "Turbulent" is relative to this window (top 30% of days by volatility). In a calm market even those days
+      are only mildly volatile and <b>not driven by news shocks</b>, so sentiment cannot help and may add a
+      little noise. News add value when volatility is really driven by sentiment: panics, crashes, surprise
+      headlines. Try a crisis window: <code>^GSPC</code> <code>2020-02-01 to 2020-12-31</code> (COVID). The
+      <a href="/evaluation?sec={{ sec }}&from={{ date_from }}&till={{ date_till }}&scan=1">period scan</a>
+      lists windows where news win.
+    </p>
+    {% endif %}
+    {% else %}
+    <p class="hint">Not enough news coverage in this period to run the sentiment ablation. Pick a wider
+      date range or a ticker with denser news (e.g. <code>^GSPC</code>).</p>
+    {% endif %}
+    {{ sentiment_chart_html|safe }}
+  </div>
+
+  <div class="card">
+    {{ chart_html|safe }}
+  </div>
+{% endblock %}

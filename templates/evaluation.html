@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Model Evaluation (Historical Backtest)</h1>
+  <p class="hint">
+    Models are evaluated on a <b>hold-out split</b>: the first 80% of trading days are used for
+    training and the last 20% for testing (unseen by the model). Task: next-day volatility
+    forecast for the S&amp;P 500 with ML models and news sentiment.
+  </p>
+
+  <div class="card">
+    <form class="filters" method="get">
+      <div>
+        <label>Ticker</label>
+        <input name="sec" value="{{ sec }}" placeholder="^GSPC, SPX, SBER">
+      </div>
+      <div>
+        <label>From</label>
+        <input name="from" type="date" value="{{ date_from }}">
+      </div>
+      <div>
+        <label>Till</label>
+        <input name="till" type="date" value="{{ date_till }}">
+      </div>
+      <div>
+        <button type="submit">Run backtest</button>
+      </div>
+    </form>
+    <p class="hint">Recommended: <code>^GSPC</code>, 2024-01-01 to 2024-12-01 (ML vs baseline).
+      Sentiment is most informative in high-volatility periods, for example <code>2020-02-01 to 2020-12-31</code> (COVID).</p>
+    <p class="hint">
+      <a href="/evaluation?sec={{ sec }}&from={{ date_from }}&till={{ date_till }}&scan=1">Scan periods where sentiment improves the model</a>
+      (evaluates several windows, about 3 to 5 min)
+    </p>
+    <p class="hint">Source: {{ candle_source }}, candles: {{ n_candles }}, sentiment: {{ sentiment_method }}</p>
+  </div>
+
+  {% if sentiment_scan %}
+  <div class="card" style="background:#e3f2fd; border-color:#90caf9;">
+    <h3>Periods where news improve the model</h3>
+    <p class="hint">The scan re-runs the whole backtest on several historical windows and reports, for each,
+      how much the best news model beats its price-only sibling (positive means news help). It is a <b>research
+      helper</b>: it tells you which window to analyse. Click a link on a row to actually load that
+      window; it re-runs every tab (Evaluation, Volatility, Correlation) for those exact dates.</p>
+    <table class="table">
+      <thead><tr><th>Period</th><th>News RMSE improvement</th><th>News coverage</th><th>Load this window</th></tr></thead>
+      <tbody>
+        {% for w in sentiment_scan %}
+        <tr>
+          <td>{{ w.label }} ({{ w.date_from }} to {{ w.date_till }})</td>
+          <td style="color:{{ '#2e7d32' if w.sentiment_improves_pct > 0 else '#c62828' }};">{{ w.sentiment_improves_pct }}%</td>
+          <td>{{ (w.coverage * 100)|round(1) if w.coverage else 'n/a' }}%</td>
+          <td>
+            <a href="{{ w.eval_url }}">Open Evaluation</a>,
+            <a href="/volatility?sec={{ sec }}&from={{ w.date_from }}&till={{ w.date_till }}">Open Volatility</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if backtest.status != 'ok' %}
+  <div class="card" style="background:#ffebee;">
+    <p><b>Insufficient data:</b> {{ backtest.message }}</p>
+  </div>
+  {% else %}
+  {% set s = backtest.summary %}
+
+  <div class="card" style="background:#e8f5e9; border-color:#a5d6a7;">
+    <h3>Summary</h3>
+    <p><b>Best model overall:</b> {{ s.best_model_label }} (RMSE = {{ s.best_rmse }})</p>
+    {% if s.best_news_model_label %}
+    <p><b>Best model that uses news:</b> {{ s.best_news_model_label }} (RMSE = {{ s.best_news_rmse }})</p>
+    {% else %}
+    <p><b>Best model that uses news:</b> <span class="hint">none, too few news days to train news models</span></p>
+    {% endif %}
+    <p><b>Baseline (persistence):</b> RMSE = {{ s.baseline_rmse }}</p>
+    <p>
+      <b>Does ML beat the baseline?</b>
+      {% if s.any_ml_beats_baseline %}
+        <span style="color:#2e7d32;">Yes.</span> At least one ML model is more accurate than the naive "yesterday = tomorrow" baseline.
+      {% else %}
+        <span style="color:#c62828;">No.</span> On this period ML did not beat the naive baseline.
+      {% endif %}
+    </p>
+    {% if s.best_news_model_label %}
+    <p>
+      <b>Did news help?</b>
+      {% if s.news_helps %}
+        <span style="color:#2e7d32;">Yes.</span> {{ s.best_news_model_label }} beats its price-only sibling
+        {{ s.best_news_sibling_label }} ({{ s.sentiment_improves_rmse_pct }}% lower RMSE).
+        Investor sentiment adds information on top of price history here.
+      {% else %}
+        <span style="color:#c62828;">Not on average.</span> The best news model does not beat the best
+        price-only model. Next-day volatility is mostly driven by its own recent values (volatility clustering,
+        Corsi 2009, HAR-RV), so price lags already capture most of the signal. News can still help in turbulent
+        periods, see the Volatility tab's regime breakdown, or scan crisis windows below.
+      {% endif %}
+      Train coverage: {{ (s.sentiment_coverage_train * 100)|round(1) if s.sentiment_coverage_train is defined else 'N/A' }}%
+    </p>
+    {% endif %}
+    <p class="hint">Each ML model is run as a <b>pair</b> ("price only" and "with news sentiment"), so the
+      news contribution is visible per model. Sentiment features: share of negative news (leverage
+      effect), opinion dispersion (StockEmotions), news volume (Ncume et al.), FinBERT polarity scaled by 0.35.</p>
+    <p class="hint">Train: {{ s.train_samples }} days, Test: {{ s.test_samples }} days
+      ({{ backtest.test_period.from }} to {{ backtest.test_period.till }})</p>
+  </div>
+
+  <div class="card">
+    <h3>Model comparison</h3>
+    <p class="hint">Green = RMSE below the baseline. Lower RMSE and MAE mean a more accurate forecast.</p>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>RMSE</th>
+          <th>MAE</th>
+          <th>News used?</th>
+          <th>vs baseline</th>
+          <th>OK?</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in backtest.models|sort(attribute='rmse') %}
+        <tr {% if m.model_key == s.best_model_key %}style="background:#e8f5e9; font-weight:600;"{% endif %}>
+          <td>{{ m.model_label }}{% if m.model_key == s.best_model_key %} (best){% endif %}</td>
+          <td>{{ m.rmse }}</td>
+          <td>{{ m.mae }}</td>
+          <td>{% if m.uses_sentiment %}<span style="color:#2e7d32;">yes</span>{% else %}<span class="hint">no</span>{% endif %}</td>
+          <td>{{ m.rmse_vs_baseline_pct }}%</td>
+          <td>{% if m.beats_baseline %}yes{% else %}no{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">{{ bar_chart_html|safe }}</div>
+  <div class="card">{{ best_chart_html|safe }}</div>
+  <div class="card">{{ overlay_chart_html|safe }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Coursework task checklist</h3>
+    <table class="table">
+      <thead><tr><th>#</th><th>Task</th><th>Where in the project</th></tr></thead>
+      <tbody>
+        {% for item in backtest.methodology %}
+        <tr>
+          <td>{{ item.step }}</td>
+          <td>{{ item.task }}</td>
+          <td class="hint">{{ item.check }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="hint">Stack note: the assignment lists FastAPI/Django/Streamlit; this MVP uses Flask + Plotly
+      (an equivalent MVP web stack). MVC: <code>app.py</code> (controller), service modules (model), <code>templates/</code> (view).</p>
+  </div>
+{% endblock %}

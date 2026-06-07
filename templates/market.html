@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>Market Dashboard</h1>
+  <p class="hint">Candlestick chart with Ichimoku Cloud. Coursework MVP, not a production trading system.</p>
+
+  <div class="card">
+    <form class="filters" method="get">
+      <div>
+        <label>Ticker</label>
+        <input name="sec" value="{{ sec }}">
+      </div>
+      <div>
+        <label>From</label>
+        <input name="from" type="date" value="{{ date_from }}">
+      </div>
+      <div>
+        <label>Till</label>
+        <input name="till" type="date" value="{{ date_till }}">
+      </div>
+      <div>
+        <button type="submit">Load</button>
+      </div>
+    </form>
+    <p class="hint">{{ sec }}, {{ n_candles }} candles, source: {{ candle_source }}</p>
+  </div>
+
+  <div class="card">
+    {{ chart_html|safe }}
+  </div>
+{% endblock %}

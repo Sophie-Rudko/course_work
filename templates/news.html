@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>News & Sentiment</h1>
+  {% if news_source_mode == 'historical' %}
+  <p class="hint" style="color:#2e7d32;"><b>Historical and live news.</b> Sentiment: {{ sentiment_method }},
+    {{ news_in_range_count }} headlines aligned with candle period (Google News date search)
+  </p>
+  {% elif news_source_mode == 'live' %}
+  <p class="hint" style="color:#2e7d32;"><b>Live news.</b> Sentiment: {{ sentiment_method }}, {{ items|length }} recent headlines
+    {% if news_date_overlap %}, {{ news_in_range_count }} in selected candle period (used for correlation){% else %},
+    chart uses all recent headlines; correlation matches news dates to candles{% endif %}
+  </p>
+  {% else %}
+  <p class="hint" style="color:#c62828;"><b>Demo news</b> (live sources unavailable). Sentiment: {{ sentiment_method }}</p>
+  {% endif %}
+
+  <div class="card">
+    <form class="filters" method="get">
+      <div>
+        <label>Ticker</label>
+        <input name="sec" value="{{ sec }}">
+      </div>
+      <div>
+        <label>From</label>
+        <input name="from" type="date" value="{{ date_from }}">
+      </div>
+      <div>
+        <label>Till</label>
+        <input name="till" type="date" value="{{ date_till }}">
+      </div>
+      <div>
+        <button type="submit">Load</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    {{ chart_html|safe }}
+  </div>
+
+  <div class="card">
+    <h3>News table</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Title</th>
+          <th>Summary</th>
+          <th>Source</th>
+          <th>Sentiment</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td>{{ item.published_at[:10] }}</td>
+          <td>
+            {% if item.url %}
+            <a class="news-link" href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.title }}</a>
+            {% else %}
+            {{ item.title }}
+            {% endif %}
+          </td>
+          <td class="hint">{{ item.summary[:120] }}{% if item.summary|length > 120 %}...{% endif %}</td>
+          <td>{{ item.source }}</td>
+          <td>
+            {% set lbl = item.sentiment.label %}
+            <span class="badge badge-{{ 'pos' if lbl == 'positive' else ('neg' if lbl == 'negative' else 'neu') }}">{{ lbl }}</span>
+          </td>
+          <td>{{ item.sentiment.sentiment_score }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

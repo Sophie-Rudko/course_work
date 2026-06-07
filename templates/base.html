@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "Volatility Forecast MVP" }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #fafafa; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    nav { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    nav a { text-decoration: none; padding: 8px 12px; border-radius: 8px; border: 1px solid #ddd; background: #fff; }
+    nav a.active { background: #1565C0; color: #fff; border-color: #1565C0; }
+    .card { padding: 16px; border: 1px solid #ddd; border-radius: 12px; margin: 16px 0; background: #fff; }
+    label { display: block; margin-top: 10px; font-weight: 600; }
+    input, select { width: 100%; padding: 8px; margin-top: 6px; box-sizing: border-box; }
+    button, .btn { margin-top: 14px; padding: 10px 14px; cursor: pointer; display: inline-block; }
+    .hint { color: #555; font-size: 14px; }
+    .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .table th, .table td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+    .badge-pos { background: #e8f5e9; color: #2e7d32; }
+    .badge-neu { background: #eceff1; color: #546e7a; }
+    .badge-neg { background: #ffebee; color: #c62828; }
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+    .filters button { margin-top: 0; }
+    h1 { margin-top: 0; }
+    a.news-link { color: #1565C0; text-decoration: underline; }
+    a.news-link:hover { color: #0D47A1; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <a href="/market" class="{% if title == 'Market' %}active{% endif %}">Market</a>
+      <a href="/news" class="{% if title == 'News' %}active{% endif %}">News</a>
+      <a href="/volatility" class="{% if title == 'Volatility' %}active{% endif %}">Volatility</a>
+      <a href="/correlation" class="{% if title == 'Correlation' %}active{% endif %}">Correlation</a>
+      <a href="/evaluation" class="{% if title == 'Evaluation' %}active{% endif %}">Evaluation</a>
+    </nav>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
