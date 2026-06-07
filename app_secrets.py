@@ -1,0 +1,4 @@
+TINKOFF_TOKEN = ""
+
+
+NEWSAPI_KEY = ""
